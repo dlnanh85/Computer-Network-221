@@ -23,15 +23,6 @@ PEER_PORT = server.getsockname()[1]
 
 ADDR = (PEER, PEER_PORT)
 
-fileserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-fileserver.bind(('', 0))
-fileserver.listen()
-
-FILERECEIVER = socket.gethostbyname(socket.gethostname())
-FILERECEIVER_PORT = fileserver.getsockname()[1]
-
-FILEADDR = (FILERECEIVER, FILERECEIVER_PORT)
-
 print(ADDR)
 
 class Ui_MainWindow(object):
@@ -40,6 +31,7 @@ class Ui_MainWindow(object):
         self.peerNicknames = []
         self.peersList = []
         self.chat = {}
+        self.friendsList = []
 
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
@@ -78,15 +70,37 @@ class Ui_MainWindow(object):
         self.gridLayout_3.addWidget(self.onlineList, 0, 0, 1, 1)
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
         self.verticalLayout_2.addWidget(self.scrollArea)
+
+
+        self.label = QtWidgets.QLabel(self.frame_2)
+        font = QtGui.QFont()
+        font.setPointSize(16)
+        self.label.setFont(font)
+        self.label.setText("Friends")
+        self.label.setObjectName("label")
+        self.verticalLayout_2.addWidget(self.label)
+        self.listWidget = QtWidgets.QListWidget(self.frame_2)
+        self.listWidget.setObjectName("listWidget")
+        self.listWidget.itemClicked.connect(self.startChat)
+        self.verticalLayout_2.addWidget(self.listWidget)
+
         self.horizontalLayout_2.addLayout(self.verticalLayout_2)
         self.verticalLayout = QtWidgets.QVBoxLayout()
         self.verticalLayout.setObjectName("verticalLayout")
+        self.horizontalLayout_3 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
         self.Name = QtWidgets.QLabel(self.frame_2)
         font = QtGui.QFont()
         font.setPointSize(16)
         self.Name.setFont(font)
         self.Name.setObjectName("Name")
-        self.verticalLayout.addWidget(self.Name)
+        self.horizontalLayout_3.addWidget(self.Name)
+        self.addFriend = QtWidgets.QPushButton(self.frame_2)
+        self.addFriend.setObjectName("addFriend")
+        self.addFriend.setText("Add friend")
+        self.horizontalLayout_3.addWidget(self.addFriend)
+        self.horizontalLayout_3.setStretch(0, 5)
+        self.verticalLayout.addLayout(self.horizontalLayout_3)
         self.chatDisplay = QtWidgets.QTextBrowser(self.frame_2)
         self.chatDisplay.setObjectName("chatDisplay")
         self.verticalLayout.addWidget(self.chatDisplay)
@@ -126,12 +140,17 @@ class Ui_MainWindow(object):
 
     def initOnline(self):
         for peer in self.peerNicknames:
-            self.onlineList.addItem(peer)
+            if peer in self.friendsList:
+                self.listWidget.addItem(peer)
+            else:
+                self.onlineList.addItem(peer)
             self.chat[peer] = []
 
     def joinPeer(self, name):
-        #self.peerNicknames.append(name)
-        self.onlineList.addItem(name)
+        if name in self.friendsList:
+            self.listWidget.addItem(name)
+        else:
+            self.onlineList.addItem(name)
         self.chat[name] = []
 
     def takeinput(self):
@@ -151,12 +170,14 @@ class Ui_MainWindow(object):
             self.chatDisplay.append(message)
 
     def leftPeer(self, name):
-        #self.peerNicknames.remove(name)
         self.chat[name].append(f"{name} has left the chat")
         self.onlineList.clear()
+        self.listWidget.clear()
         for peer in self.peerNicknames:
-            print("hihi debug")
-            self.onlineList.addItem(peer)
+            if peer in self.friendsList:
+                self.listWidget.addItem(peer)
+            else:
+                self.onlineList.addItem(peer)
 
     def fileToUpload(self):
         current = self.Name.text()
@@ -167,27 +188,15 @@ class Ui_MainWindow(object):
             print(fileName)
             fileSize = os.path.getsize(filePath)
             sendMessage(receiver, "FILE")
-            # fileServer = receiveMessage(receiver)
-            # print(fileServer)
-            # fileclient = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # fileclient.connect(tuple(json.loads(fileServer)))
-            # sendMessage(receiver, str(fileSize))
-            # sendFileThread = threading.Thread(target=sendFile, args=(fileclient, filePath))
-            # sendFileThread.start()
-            # sendFileThread.join()
-            # response = receiveMessage(receiver)
-            # if response == "<START>":
-            # sendFile(receiver, filePath)
             file = open(filePath, "rb")
             sendMessage(receiver, fileName)
-            # fileSize = os.path.getsize(filePath)
             while True:
                 data = file.read(1024)
                 if not data:
                     file.close()
                     break
                 receiver.sendall(data)
-            print("done")
+            print("completed")
             filemessage = f"{nickname} sent {fileName}"
             self.chat[current].append(filemessage)
     
@@ -226,19 +235,6 @@ ui.takeinput()
 nickname = ui.nickname
 ui.initOnline()
 
-# def sendFile(fileclient, filePath):
-#     file = open(filePath, "rb")
-#     # fileSize = os.path.getsize(filePath)
-#     try:
-#         data = file.read()
-#         # peer.send(data.encode(FORMAT))
-#         fileclient.sendall(data)
-#         fileclient.send(b"<END>")
-#         print("done")
-#         file.close()
-#     except Exception as e:
-#         print(e)
-
 def sendMessage(peer, msg):
     message = msg.encode(FORMAT)
     msg_length = len(msg)
@@ -258,12 +254,12 @@ def receive():
         try:
             message = receiveMessage(client)
             if message == 'NICK':
-                #client.send(nickname.encode(FORMAT))
                 sendMessage(client, nickname)
             elif message == 'ONL':
                 sendMessage(client, json.dumps(ADDR))
                 ui.peersList = json.loads(receiveMessage(client))
                 ui.peerNicknames = json.loads(receiveMessage(client))
+                ui.friendsList = json.loads(receiveMessage(client))
                 print("ONL", ui.peerNicknames)
                 print('Online peers:')
                 for p, n in zip(ui.peersList, ui.peerNicknames):
@@ -286,22 +282,12 @@ def receive():
                 print(f'New peers connected: {peerNickname} {peerAddr}')
             elif message == 'LEFT':
                 peerAddr = json.loads(receiveMessage(client))
-                print("first index")
                 index = ui.peersList.index(peerAddr)
-                print(index)
-                print("second index")
-                print(ui.peerSockets)
                 peerSocket = ui.peerSockets[index]
-                print(peerSocket)
-                print("third index")
-                print(ui.peerNicknames)
                 peerNickname = ui.peerNicknames[index]
-                print(peerNickname)
-                print("final")
                 ui.peersList.remove(peerAddr)
                 ui.peerSockets.remove(peerSocket)
                 ui.peerNicknames.remove(peerNickname)
-                print("LEFT",ui.peerNicknames)
                 ui.leftPeer(peerNickname)
             else:
                 print(message)
@@ -312,88 +298,24 @@ def receive():
             client.close()
             break
 
-# def startChat(receiver):
-#     # global peerNicknames
-#     # global peerSockets
-#     # while True:
-#     #     print(f'{peerNicknames} choose')
-#     #     receiver = input("To: ")
-#     #     if(receiver not in peerNicknames):
-#     #         print(f'{receiver} is not connected')
-#     #         pass
-#     #     else:
-#     receiverSocket = peerSockets[peerNicknames.index(receiver)]
-#     write_thread = threading.Thread(target=write, args=(receiverSocket,))
-#     write_thread.start()
-#     write_thread.join()
-
-# def write(client):
-#     while True:
-#         message = input("")
-#         if(message == "exit"):
-#             break
-#         sendMessage(client, f'{nickname}: {message}')
-
-# def receiveFile(peer):
-
-#     fileName = receiveMessage(peer)
-#     # fileSize = receiveMessage(peer)
-#     filepath = f".\\{nickname}\\{fileName}"
-#     file = open(filepath, "wb")
-#     file_bytes = b""
-#     done = False
-#     while not done:
-#         data = client.recv(1024)
-#         if file_bytes[-5:] == b'<END>':
-#             done = True
-#         else:
-#             file_bytes += data
-#     # data = client.recv(fileSize)
-#     print("completed")
-#     file.write(file_bytes)
-#     file.close()
-
 def handle(client):
     while True:
         try:
             message = receiveMessage(client)
             if message == "FILE":
-                # fileserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # fileserver.bind(('', 0))
-                # fileserver.listen()
-
-                # host = socket.gethostbyname(socket.gethostname())
-                # port = fileserver.getsockname()[1]
-                # sendMessage(client, json.dumps(FILEADDR))
-                # print(FILEADDR)
-                # print("JSON Dumps", json.dumps(FILEADDR))
                 fileName = receiveMessage(client)
-                # print(fileName)
-                # fileSize = receiveMessage(client)
-                # print(fileSize)
-                # fileSize = receiveMessage(peer)
                 if not os.path.exists(nickname):
                     os.mkdir(nickname)
                 
                 filepath = f".\\{nickname}\\{fileName}"
                 file = open(filepath, "wb")
-                # file_bytes = b""
-                # done = False
-                # sendMessage(client, "<START>")
-                # progress = tqdm.tqdm(unit="B", unit_scale=True, unit_divisor=1000, total=int(fileSize))
                 while True:
-                    # print("debugging", done)
                     data = client.recv(1024)
-                    # print("received", file_bytes[-5:])
                     if len(data) != 1024:
                         file.close()
                         break
                     else:
                         file.write(data)
-                        # print(file_bytes[-5:])
-                        # print(file_bytes.decode() == '<END>')
-                    # progress.update(4096)
-                # data = client.recv(fileSize)
                 print("completed")
             else:
                 ui.receiveMessage(re.findall('^(.*):', message)[0], message)

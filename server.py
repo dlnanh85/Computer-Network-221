@@ -1,6 +1,7 @@
 import socket
 import threading
 import json
+import sqlite3 as sl
 
 
 HEADER = 64
@@ -13,6 +14,8 @@ FORMAT = 'utf-8'
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(ADDR)
 server.listen()
+
+con = sl.connect('user.db')
 
 peers = []
 peer_addr = []
@@ -34,31 +37,10 @@ def sendMessage(peer, msg):
 
 def receiveMessage(peer):
     msg_length = peer.recv(HEADER).decode(FORMAT)
-    #print("ab")
-    #print(msg_length)
-    #print("ba")
     msg_length = int(msg_length)
     msg = peer.recv(msg_length).decode(FORMAT)
-    #print('aa')
-    #print(msg)
-    #print('aa')
     return msg
 
-
-# def sendPeersList():
-#     peerNicknames = json.dumps(nicknames)
-#     for peer in peers:
-#         sendMessage(peer, 'ONL')
-#         try:
-#             peerServer = receiveMessage(peer)
-#             peer_server_addr.append(json.loads(peerServer))
-#             print(peer_server_addr)
-#             print(peerNicknames)
-#             sendMessage(peer, json.dumps(peer_server_addr))
-#             sendMessage(peer, peerNicknames)
-#         except Exception as e:
-#             print("Something went wrong")
-#             print(e)
 
 def sendPeersList(peer, nickname):
     peerNicknames = json.dumps(nicknames)
@@ -70,6 +52,15 @@ def sendPeersList(peer, nickname):
         peer_server_addr.append(json.loads(peerServer))
         nicknames.append(nickname)
         broadcastNewPeer(peerServer, nickname)
+        exists = con.execute(f"SELECT EXISTS(SELECT 1 FROM USER WHERE name = '{nickname}')")
+        for row in exists:
+            if row[0] == 0:
+                con.execute(f"INSERT INTO USER (name, friends) VALUES ('{nickname}', '[]')")
+                sendMessage(peer, '[]')
+            else:
+                friends = con.execute(f"SELECT friends FROM USER WHERE name = '{nickname}'")
+                for friend in friends:
+                    sendMessage(peer, friend[0])
     except Exception as e:
         print("Something went wrong")
         print(e)
@@ -98,6 +89,7 @@ def handle(client):
             addr = peer_addr[index]
             nickname = nicknames[index]
             serverAddr = peer_server_addr[index]
+            print(f'{nickname} left!')
             broadcast(f'{nickname} left!')
             peer_addr.remove(addr)
             nicknames.remove(nickname)
@@ -111,14 +103,11 @@ def receive():
         print(f"{str(address)} has connected")
 
         sendMessage(peer, 'NICK')
-        #peer.send('NICK'.encode(FORMAT))
         nickname = receiveMessage(peer)
-        #nickname = peer.recv(1024).decode(FORMAT)
 
         print(f"Nickname is {nickname}")
         broadcast(f"{nickname} has joined")
         sendMessage(peer, "Connected to server")
-        #peer.send("Connected to server!".encode(FORMAT))
         sendPeersList(peer, nickname)
         peers.append(peer)
         peer_addr.append(address)
@@ -126,5 +115,5 @@ def receive():
         thread = threading.Thread(target=handle, args=(peer,))
         thread.start()
 
-print("Server is listening...")
+print("[Server is listening]...")
 receive()
