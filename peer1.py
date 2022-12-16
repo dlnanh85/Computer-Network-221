@@ -2,10 +2,12 @@ import socket
 import threading
 import json
 import re
+import os
+import tqdm
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 HEADER = 64
-SERVER = '172.22.208.1'
+SERVER = '192.168.8.6'
 PORT = 55555
 FORMAT = 'utf-8'
 
@@ -20,6 +22,15 @@ PEER = socket.gethostbyname(socket.gethostname())
 PEER_PORT = server.getsockname()[1]
 
 ADDR = (PEER, PEER_PORT)
+
+fileserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+fileserver.bind(('', 0))
+fileserver.listen()
+
+FILERECEIVER = socket.gethostbyname(socket.gethostname())
+FILERECEIVER_PORT = fileserver.getsockname()[1]
+
+FILEADDR = (FILERECEIVER, FILERECEIVER_PORT)
 
 print(ADDR)
 
@@ -86,6 +97,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout.addWidget(self.sendText)
         self.uploadButton = QtWidgets.QPushButton(self.frame_2)
         self.uploadButton.setObjectName("uploadButton")
+        self.uploadButton.clicked.connect(self.fileToUpload)
         self.horizontalLayout.addWidget(self.uploadButton)
         self.sendButton = QtWidgets.QPushButton(self.frame_2)
         self.sendButton.setObjectName("sendButton")
@@ -146,6 +158,40 @@ class Ui_MainWindow(object):
             print("hihi debug")
             self.onlineList.addItem(peer)
 
+    def fileToUpload(self):
+        current = self.Name.text()
+        filePath, _ = QtWidgets.QFileDialog.getOpenFileName(MainWindow, "Send file", "", "All Files (*)")
+        if filePath:
+            receiver = self.peerSockets[self.peerNicknames.index(current)]
+            fileName = str(os.path.basename(filePath))
+            print(fileName)
+            fileSize = os.path.getsize(filePath)
+            sendMessage(receiver, "FILE")
+            # fileServer = receiveMessage(receiver)
+            # print(fileServer)
+            # fileclient = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # fileclient.connect(tuple(json.loads(fileServer)))
+            # sendMessage(receiver, str(fileSize))
+            # sendFileThread = threading.Thread(target=sendFile, args=(fileclient, filePath))
+            # sendFileThread.start()
+            # sendFileThread.join()
+            # response = receiveMessage(receiver)
+            # if response == "<START>":
+            # sendFile(receiver, filePath)
+            file = open(filePath, "rb")
+            sendMessage(receiver, fileName)
+            # fileSize = os.path.getsize(filePath)
+            while True:
+                data = file.read(1024)
+                if not data:
+                    file.close()
+                    break
+                receiver.sendall(data)
+            print("done")
+            filemessage = f"{nickname} sent {fileName}"
+            self.chat[current].append(filemessage)
+    
+
     def sendMessage(self):
         if(self.sendText.toPlainText() and self.Name.text() in self.peerNicknames):
             current = self.Name.text()
@@ -155,9 +201,7 @@ class Ui_MainWindow(object):
             self.displayChatHistory(current)
             print("CHAT", self.peerNicknames)
             receiverSocket = self.peerSockets[self.peerNicknames.index(current)]
-            write_thread = threading.Thread(target=sendMessage, args=(receiverSocket, message))
-            write_thread.start()
-            write_thread.join()
+            sendMessage(receiverSocket, message)
 
     def receiveMessage(self, name, message):
         self.chat[name].append(message)
@@ -181,6 +225,19 @@ MainWindow.show()
 ui.takeinput()
 nickname = ui.nickname
 ui.initOnline()
+
+# def sendFile(fileclient, filePath):
+#     file = open(filePath, "rb")
+#     # fileSize = os.path.getsize(filePath)
+#     try:
+#         data = file.read()
+#         # peer.send(data.encode(FORMAT))
+#         fileclient.sendall(data)
+#         fileclient.send(b"<END>")
+#         print("done")
+#         file.close()
+#     except Exception as e:
+#         print(e)
 
 def sendMessage(peer, msg):
     message = msg.encode(FORMAT)
@@ -277,11 +334,69 @@ def receive():
 #             break
 #         sendMessage(client, f'{nickname}: {message}')
 
+# def receiveFile(peer):
+
+#     fileName = receiveMessage(peer)
+#     # fileSize = receiveMessage(peer)
+#     filepath = f".\\{nickname}\\{fileName}"
+#     file = open(filepath, "wb")
+#     file_bytes = b""
+#     done = False
+#     while not done:
+#         data = client.recv(1024)
+#         if file_bytes[-5:] == b'<END>':
+#             done = True
+#         else:
+#             file_bytes += data
+#     # data = client.recv(fileSize)
+#     print("completed")
+#     file.write(file_bytes)
+#     file.close()
+
 def handle(client):
     while True:
         try:
             message = receiveMessage(client)
-            ui.receiveMessage(re.findall('^(.*):', message)[0], message)
+            if message == "FILE":
+                # fileserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                # fileserver.bind(('', 0))
+                # fileserver.listen()
+
+                # host = socket.gethostbyname(socket.gethostname())
+                # port = fileserver.getsockname()[1]
+                # sendMessage(client, json.dumps(FILEADDR))
+                # print(FILEADDR)
+                # print("JSON Dumps", json.dumps(FILEADDR))
+                fileName = receiveMessage(client)
+                # print(fileName)
+                # fileSize = receiveMessage(client)
+                # print(fileSize)
+                # fileSize = receiveMessage(peer)
+                if not os.path.exists(nickname):
+                    os.mkdir(nickname)
+                
+                filepath = f".\\{nickname}\\{fileName}"
+                file = open(filepath, "wb")
+                # file_bytes = b""
+                # done = False
+                # sendMessage(client, "<START>")
+                # progress = tqdm.tqdm(unit="B", unit_scale=True, unit_divisor=1000, total=int(fileSize))
+                while True:
+                    # print("debugging", done)
+                    data = client.recv(1024)
+                    # print("received", file_bytes[-5:])
+                    if len(data) != 1024:
+                        file.close()
+                        break
+                    else:
+                        file.write(data)
+                        # print(file_bytes[-5:])
+                        # print(file_bytes.decode() == '<END>')
+                    # progress.update(4096)
+                # data = client.recv(fileSize)
+                print("completed")
+            else:
+                ui.receiveMessage(re.findall('^(.*):', message)[0], message)
         except:
             client.close()
             break
